@@ -1,0 +1,15 @@
+{
+  "document_type": "assignment",
+  "title": "AD1 Sheet",
+  "author": "Alokik",
+  "sections": [
+    {
+      "title": "Question 1",
+      "instructions": "Give one simple math problem."
+    },
+    {
+      "title": "Question 2",
+      "instructions": "Generate a 2-part theoretical question."
+    }
+  ]
+}
