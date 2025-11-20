@@ -43,14 +43,17 @@ def load_dataset(excel_path: str) -> List[Dict]:
         )
 
         examples.append(
-            {
-                "id": id_,
-                "text": text,
-                "user_prompt": user_prompt,
-                "latex_output": latex_output,
-                # keep original row if you want later
-                # "row": row.to_dict()
-            }
-        )
+        {
+            "id": id_,
+            "text": text,
+            "user_prompt": user_prompt,
+            "latex_output": latex_output,
+            "doc_type": doc_type.lower(),
+            "keywords": [kw.strip().lower() for kw in keywords.split(",")] if keywords else [],
+            "structure": doc_struct,
+            "content_elements": content_elems,
+        }
+    )
+
 
     return examples

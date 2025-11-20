@@ -13,6 +13,7 @@ import argparse
 import json
 import tempfile
 import subprocess
+import re
 from pathlib import Path
 from typing import List, Optional
 
@@ -38,6 +39,23 @@ try:
     import ollama
 except Exception:
     ollama = None
+
+
+import re
+
+def basic_latex_lint(text: str) -> str:
+    # Fix common hallucinated LaTeX typos
+    fixes = {
+        r"\boindent\b": r"\\noindent",
+        r"\bextbf\b": r"\\textbf",
+        r"\bextit\b": r"\\textit",
+        r"\bindent\b": r"\\indent",
+    }
+
+    for wrong, correct in fixes.items():
+        text = re.sub(wrong, correct, text)
+
+    return text
 
 
 # ----------------------------------------------------
@@ -213,7 +231,10 @@ def generate_cmd(
     template: str,
     strict: bool,
     compile_pdf: bool,
+    doc_type: Optional[str],
+    keywords: Optional[str],
 ):
+
     print("[RAGEngine] Loading index...")
 
     # Load retriever only if examples are required
@@ -234,7 +255,15 @@ def generate_cmd(
         raise RuntimeError("No user request provided.")
 
     # Retrieve examples (can be empty list)
-    examples = retriever.retrieve(user_request)
+    kw_list = keywords.split(",") if keywords else None
+
+    examples = retriever.retrieve(
+        user_request,
+        doc_type=doc_type,
+        keywords=kw_list
+    )
+
+
     print(f"[RAGEngine] Retrieved example IDs: {[e['id'] for e in examples]}")
 
     # Build prompt with template-aware instructions
@@ -256,6 +285,7 @@ def generate_cmd(
     sanitized = strip_forbidden_macros(sanitized)
     sanitized = fix_stray_backslashes_before_percent(sanitized)
     sanitized = fix_markdown_and_lists(sanitized)
+    sanitized = basic_latex_lint(sanitized)
     sanitized = re.sub(r"^\s*[\}\]]+\s*", "", sanitized)
     # Remove stray environment endings without a matching begin
     sanitized = re.sub(r"\\end\{itemize\}", "", sanitized)
@@ -341,9 +371,19 @@ def main():
     p_gen.add_argument("--template", type=str, default="article_minimal")
     p_gen.add_argument("--strict", action="store_true")
     p_gen.add_argument("--compile", action="store_true")
+    p_gen.add_argument("--doc_type", type=str, default=None)
+    p_gen.add_argument("--keywords", type=str, default=None)
+
     p_gen.set_defaults(func=lambda a: generate_cmd(
-        a.user_request, a.dsf, a.template, a.strict, a.compile
+        a.user_request,
+        a.dsf,
+        a.template,
+        a.strict,
+        a.compile,
+        a.doc_type,
+        a.keywords
     ))
+
 
     args = parser.parse_args()
 

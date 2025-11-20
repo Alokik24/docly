@@ -10,7 +10,8 @@ CONFIG = {
     "excel_path": str(PROJECT_ROOT / "data" / "docly_dataset2(AutoRecovered).xlsx"),
 
     "sentence_transformer_model": "all-MiniLM-L6-v2",
-    "local_llm_model": "qwen2.5:1.5b-instruct",
+    # "local_llm_model": "qwen2.5:1.5b-instruct",
+    "local_llm_model": "qwen2.5:3b",
     "index_path": str(PACKAGE_ROOT / "index.faiss"),
     "meta_path": str(PACKAGE_ROOT / "meta.pkl"),
 
