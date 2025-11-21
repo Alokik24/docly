@@ -21,6 +21,8 @@ from .config import CONFIG
 from .dataset_loader import load_dataset
 from .indexer import Indexer
 from .retriever import Retriever
+from .orchestrator import RAGOrchestrator
+from .ollama_client import call_local_ollama
 from .sanitizer import (
     normalize_backslashes,
     normalize_newlines,
@@ -56,29 +58,6 @@ def basic_latex_lint(text: str) -> str:
         text = re.sub(wrong, correct, text)
 
     return text
-
-
-# ----------------------------------------------------
-# Normalize Ollama response safely
-# ----------------------------------------------------
-def normalize_ollama(resp):
-    """Extract text from any Ollama response shape."""
-    if isinstance(resp, dict):
-        for key in ("response", "text", "output"):
-            if key in resp:
-                return resp[key]
-
-        # Sometimes nested
-        if "choices" in resp and isinstance(resp["choices"], list):
-            c = resp["choices"][0]
-            for key in ("message", "text", "content"):
-                if key in c:
-                    return c[key]
-
-        return json.dumps(resp)
-
-    return str(resp)
-
 
 # ----------------------------------------------------
 # Build Phase-2 prompt (supports body-only mode)
@@ -137,25 +116,6 @@ def build_prompt(user_request: str, examples: List[dict], template_provided: boo
     ]
 
     return "\n".join(parts)
-
-
-# ----------------------------------------------------
-# Call Ollama
-# ----------------------------------------------------
-def call_local_ollama(prompt: str, model: str, max_tokens: int = 1500):
-    if ollama is None:
-        raise RuntimeError("Ollama client missing. Install with: pip install ollama")
-
-    resp = ollama.generate(
-        model=model,
-        prompt=prompt,
-        options={
-            "num_predict": max_tokens,
-            "num_ctx": 1024
-        }
-    )
-    return normalize_ollama(resp)
-
 
 # ----------------------------------------------------
 # Optional: Compile LaTeX → PDF
@@ -354,6 +314,32 @@ def generate_cmd(
             print("[RAGEngine] PDF compile error:")
             print(result)
 
+def orchestrate_cmd(a):
+    print("[Orchestrator] Loading index...")
+
+    idx = Indexer.load(
+        CONFIG["index_path"],
+        CONFIG["meta_path"],
+        CONFIG["sentence_transformer_model"],
+    )
+
+    orch = RAGOrchestrator(idx)
+
+    kw_list = a.keywords.split(",") if a.keywords else None
+
+    tex = orch.generate(
+        query=a.user_request,
+        doc_type=a.doc_type,
+        keywords=kw_list,
+        template=a.template
+    )
+
+    out = Path("last_output.tex")
+    out.write_text(tex, encoding="utf-8")
+
+    print("[Orchestrator] Saved → last_output.tex")
+
+
 
 # ----------------------------------------------------
 # CLI Entry point
@@ -361,6 +347,13 @@ def generate_cmd(
 def main():
     parser = argparse.ArgumentParser(prog="rag_engine")
     sub = parser.add_subparsers(dest="cmd")
+    p_orch = sub.add_parser("orchestrate")
+    p_orch.add_argument("user_request")
+    p_orch.add_argument("--doc_type", type=str, default=None)
+    p_orch.add_argument("--keywords", type=str, default=None)
+    p_orch.add_argument("--template", type=str, default="article_minimal")
+
+    p_orch.set_defaults(func=lambda a: orchestrate_cmd(a))
 
     p_build = sub.add_parser("build_index")
     p_build.set_defaults(func=lambda a: build_index_cmd())

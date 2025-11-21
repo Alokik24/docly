@@ -2,8 +2,8 @@ from langchain_core.prompts import PromptTemplate
 
 from .retriever import Retriever
 from .template_manager import TemplateManager
-from .sanitizer import sanitize_pipeline   # we'll define below
-from .rag_engine import call_local_ollama
+from .sanitizer import sanitize
+from .ollama_client import call_local_ollama
 from .config import CONFIG
 
 
@@ -13,43 +13,53 @@ class RAGOrchestrator:
         self.retriever = Retriever(indexer, CONFIG["k"])
         self.tm = TemplateManager()
 
+        # JINJA2 SAFE TEMPLATE (LaTeX braces allowed)
         self.prompt_template = PromptTemplate.from_template(
             """
 You are a STRICT LaTeX generator.
-Do NOT use markdown.
-ONLY output LaTeX.
+Do NOT use markdown or code fences.
+ONLY output LaTeX BODY content (inside \\begin{document} ... \\end{document}).
 
-# Examples
-{example_section}
+NEVER output:
+- \\documentclass
+- \\usepackage
+- \\begin{document}
+- \\end{document}
+- title/author/date macros
 
-# User request
-{query}
+# Retrieved Examples
+{{ example_section }}
 
-Respond with LaTeX body content only.
-"""
+# User Request
+{{ query }}
+
+Respond with LaTeX BODY ONLY.
+""",
+            template_format="jinja2"
         )
 
     def build_examples(self, examples):
-        out = []
+        if not examples:
+            return "(no examples retrieved)"
+        blocks = []
         for e in examples:
-            out.append(f"PROMPT:\n{e['user_prompt']}\nLATEX:\n{e['latex_output']}\n---")
-        return "\n".join(out)
+            blocks.append(
+                f"PROMPT:\n{e.get('user_prompt','')}\n"
+                f"LATEX:\n{e.get('latex_output','')}\n"
+                "---------------------------"
+            )
+        return "\n".join(blocks)
 
     def generate(self, query, doc_type=None, keywords=None, template="article_minimal"):
-        # 1. retrieve
-        ex = self.retriever.retrieve(query, doc_type=doc_type, keywords=keywords)
+        examples = self.retriever.retrieve(query, doc_type=doc_type, keywords=keywords)
 
-        # 2. format prompt
-        example_block = self.build_examples(ex)
-        prompt = self.prompt_template.format(example_section=example_block, query=query)
+        prompt = self.prompt_template.format(
+            example_section=self.build_examples(examples),
+            query=query
+        )
 
-        # 3. run model
         raw = call_local_ollama(prompt, CONFIG["local_llm_model"], max_tokens=1800)
-
-        # 4. sanitize
-        clean = sanitize_pipeline(raw)
-
-        # 5. wrap with template
+        clean = sanitize(raw)
         final = self.tm.enforce_template(clean, template)
 
         return final
